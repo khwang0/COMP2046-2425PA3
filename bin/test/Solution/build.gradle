@@ -1,0 +1,154 @@
+buildscript {
+    repositories {
+        mavenCentral() // For the ProGuard Gradle Plugin and anything else.
+    }
+    dependencies {
+        classpath 'com.guardsquare:proguard-gradle:7.1.0'  // The ProGuard Gradle plugin.
+
+    }
+}
+
+
+plugins {
+    id 'java'
+    id 'application'
+    id 'org.openjfx.javafxplugin' version '0.0.10' apply false
+
+
+}
+
+sourceCompatibility = '1.8'
+targetCompatibility = '1.8'
+
+dependencies {
+        // https://mvnrepository.com/artifact/mysql/mysql-connector-java
+    implementation group: 'mysql', name: 'mysql-connector-java', version: '8.0.28'
+
+        //Thanks for using https://jar-download.com
+
+        // https://mvnrepository.com/artifact/org.junit.jupiter/junit-jupiter-api
+        implementation 'org.junit.jupiter:junit-jupiter-api:5.9.0'
+
+        testImplementation 'org.junit.jupiter:junit-jupiter-api:5.9.0'
+        testImplementation 'org.junit.jupiter:junit-jupiter-engine:5.9.0'
+
+}
+
+
+if (JavaVersion.current() > org.gradle.api.JavaVersion.VERSION_1_10) {
+    println('Current JavaVersion: "' + JavaVersion.current() + '"');
+    println('Apply org.openjfx.javafxplugin');
+    apply plugin: 'org.openjfx.javafxplugin'
+    javafx {
+        version = "12.0.1"
+        modules = ['javafx.controls','javafx.fxml' ]
+    }
+}
+
+group 'org.example'
+version '1.0-SNAPSHOT'
+
+repositories {
+    mavenCentral()
+}
+
+mainClassName = 'ModernArt'
+
+tasks.test {
+    useJUnitPlatform()
+}
+
+sourceSets {
+    main {
+        java {
+            srcDirs = ['src']
+        }
+        resources {
+            srcDirs = ['src']
+        }
+    }
+    test {
+        java {
+            srcDirs = ['src']
+        }
+        resources {
+            srcDirs = ['src']
+        }
+    }
+}
+
+
+
+
+run {
+    standardInput = System.in
+}
+
+def outputJar = "${buildDir}\\libs\\${rootProject.name}-${version}.jar"
+
+jar {
+   manifest {
+      attributes('Main-Class': "${mainClassName}")
+   }
+}
+
+task createJar(type: Jar) {
+    println("Cleaning...")
+//
+//    manifest {
+//        attributes(
+//                'Main-Class': "${mainClassName}",
+////                'Class-Path': configurations.default.collect { 'dependencies/' +
+////                        it.getName() }.join(' ')
+////                'Class-Path': "jfxrt.jar"
+//        )
+//    }
+    from {
+        configurations.compile.collect { it.isDirectory() ? it : zipTree(it)
+        }
+    } with jar
+
+    println "${outputJar} created"
+}
+
+// 2. Add tasks
+
+// 2.1 Clean buildDir before running proguard
+task cleanClasses(type: Delete) {
+    delete "${buildDir}/classes/java/main"
+    delete "${buildDir}/resources/java/main"
+}
+
+classes.dependsOn(cleanClasses)
+
+// 2.2 Add proguard task
+task proguard(type: proguard.gradle.ProGuardTask, dependsOn: classes) {
+    injars project.sourceSets.main.output
+    injars file("manifest")
+    keepdirectories "./META-INF"
+    outjars "../demo.jar"
+
+    libraryjars project.sourceSets.main.compileClasspath
+
+    configuration 'proguard.conf'
+}
+
+// 2.3 Clean after proguard task
+task cleanAfterProguard(type: Delete, dependsOn: proguard) {
+    delete "${buildDir}/classes/java/main"
+    delete "${buildDir}/resources/java/main"
+}
+
+// 2.4 Extract output jar to buildDir 
+task unpackProguardOutput (type: Copy, dependsOn: cleanAfterProguard) {
+    from zipTree("demo.jar")
+    into file("${buildDir}/classes/java/main")
+}
+
+// 3. Create a task to run the app with the proguarded buildDir
+task runProguard(type: JavaExec, dependsOn: unpackProguardOutput) {
+    classpath = sourceSets.main.runtimeClasspath
+    jvmArgs = ['--module-path', classpath.asPath,
+               '--add-modules', 'javafx.controls,javafx.fxml']
+    main = '${mainClassName}' // <-- this name will depend on the proguard result
+}
